@@ -85,7 +85,7 @@ function App() {
   const skipped = parseSkippedLines(skip, lineCount, startLine);
   const zoom = Math.min(1, availableWidth / size.width);
   const options: BaseCodeOptions = {
-    theme: { dark: "github-dark", light: "github-light" },
+    theme: mode === "dark" ? "github-dark" : "github-light",
     themeType: mode,
     disableFileHeader: true,
     disableLineNumbers: !lineNumbers,
