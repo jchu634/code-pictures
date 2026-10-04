@@ -42,25 +42,28 @@ export function measureMinimumWindow(
   if (!zoom) return null;
   let width = 0;
   let height = 0;
+  const wraps = root.querySelector("pre")?.dataset.overflow === "wrap";
   for (const row of rows) {
-    const range = document.createRange();
-    range.selectNodeContents(row);
-    const style = getComputedStyle(row);
-    const textWidth =
-      getComputedStyle(row, "::after").content === '"···"'
-        ? parseFloat(style.fontSize) * 3
-        : range.getBoundingClientRect().width / zoom;
-    width = Math.max(
-      width,
-      textWidth +
-        parseFloat(style.paddingLeft) +
-        parseFloat(style.paddingRight),
-    );
+    if (!wraps) {
+      const range = document.createRange();
+      range.selectNodeContents(row);
+      const style = getComputedStyle(row);
+      const textWidth =
+        getComputedStyle(row, "::after").content === '"···"'
+          ? parseFloat(style.fontSize) * 3
+          : range.getBoundingClientRect().width / zoom;
+      width = Math.max(
+        width,
+        textWidth +
+          parseFloat(style.paddingLeft) +
+          parseFloat(style.paddingRight),
+      );
+    }
     height += row.getBoundingClientRect().height / zoom;
   }
   const gutter = root.querySelector<HTMLElement>("[data-gutter]");
   return {
-    width: Math.ceil(width + (gutter?.offsetWidth ?? 0) + 6),
+    width: wraps ? 320 : Math.ceil(width + (gutter?.offsetWidth ?? 0) + 6),
     height: Math.ceil(height + 28 + (showHeader ? 44 : 0) + 4),
   };
 }
