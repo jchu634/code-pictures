@@ -53,7 +53,7 @@ function App() {
   const [filename, setFilename] = useState("greeting.ts");
   const [showHeader, setShowHeader] = useState(true);
   const [file, setFile] = useState({
-    name: "greeting.ts",
+    name: "example.ts",
     contents: sampleCode,
     lang: "typescript",
   });
@@ -89,7 +89,7 @@ function App() {
     themeType: mode,
     disableFileHeader: true,
     disableLineNumbers: !lineNumbers,
-    overflow: "scroll",
+    overflow: "wrap",
     unsafeCSS: buildPreviewCSS({
       font,
       fontSize,
@@ -140,6 +140,15 @@ function App() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const container =
+        viewport.current?.querySelector<HTMLElement>("diffs-container");
+      if (container) measure(container);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [size.width, measure]);
 
   useEffect(() => {
     let active = true;
