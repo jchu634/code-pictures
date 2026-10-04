@@ -50,7 +50,7 @@ const headingClasses =
 
 function App() {
   const [mode, setMode] = useState<"dark" | "light">("dark");
-  const [filename, setFilename] = useState("greeting.ts");
+  const [filename, setFilename] = useState("example.ts");
   const [showHeader, setShowHeader] = useState(true);
   const [file, setFile] = useState({
     name: "example.ts",
