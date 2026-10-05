@@ -51,7 +51,7 @@ export function buildPreviewCSS({
 }): string {
   const visibleCount =
     lineCount - [...skipped].filter((line) => skipped.has(line - 1)).length;
-  let css = `:host { --diffs-font-family: "${font}", monospace; --diffs-font-size: ${fontSize}px; --diffs-line-height: ${Math.round(fontSize * 1.65)}px; --diffs-gap-block: 0px; --diffs-gap-inline: 20px; --diffs-min-number-column-width: ${String(startLine + lineCount - 1).length + 1}ch; } pre { overflow: hidden !important; } [data-code] { overflow: visible !important; scrollbar-width: none; } [data-line-number-content] { color: transparent; position: relative; } [data-line-number-content]::after { position: absolute; inset: 0; color: var(--diffs-fg-number); } [data-gutter], [data-content] { grid-row: span ${visibleCount} !important; }`;
+  let css = `:host { background-color: var(--color-code-background); color: var(--color-code-foreground); --diffs-bg: var(--color-code-background); --diffs-fg: var(--color-code-foreground); --diffs-font-family: "${font}", monospace; --diffs-font-size: ${fontSize}px; --diffs-line-height: ${Math.round(fontSize * 1.65)}px; --diffs-gap-block: 0px; --diffs-gap-inline: 20px; --diffs-min-number-column-width: ${String(startLine + lineCount - 1).length + 1}ch; } pre { overflow: hidden !important; } [data-code] { overflow: visible !important; scrollbar-width: none; } [data-line-number-content] { color: transparent; position: relative; } [data-line-number-content]::after { position: absolute; inset: 0; color: var(--diffs-fg-number); } [data-gutter], [data-content] { grid-row: span ${visibleCount} !important; }`;
   for (let line = 1; line <= lineCount; line++) {
     const number = `[data-column-number="${line}"]`;
     if (skipped.has(line)) {

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ComponentProps, KeyboardEvent, PointerEvent } from "react";
 import { File, EditProvider } from "@pierre/diffs/react";
 import { Editor } from "@pierre/diffs/edit";
 import type { BaseCodeOptions } from "@pierre/diffs";
-import { Download, Moon, RotateCcw, Sun } from "lucide-react";
+import { Download, Moon, RotateCcw, Sun, WandSparkles } from "lucide-react";
+import { canFormat, formatCode } from "./format";
+import { themes, themeStyle, themeCSS } from "./themes";
 import {
   buildPreviewCSS,
   parseSkippedLines,
@@ -50,15 +52,23 @@ const headingClasses =
 
 function App() {
   const [mode, setMode] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState(themes[0]);
+  const palette = theme[mode];
+  const [formatting, setFormatting] = useState(false);
+  const [formatError, setFormatError] = useState("");
+  const formatRequest = useRef(0);
   const [filename, setFilename] = useState("example.ts");
   const [showHeader, setShowHeader] = useState(true);
+  const [roundedCorners, setRoundedCorners] = useState(true);
+  const [showPadding, setShowPadding] = useState(false);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const [minimum, setMinimum] = useState<WindowSize>({ width: 1, height: 1 });
   const [file, setFile] = useState({
     name: "example.ts",
     contents: sampleCode,
     lang: "typescript",
   });
   const code = useRef(sampleCode);
-  const [revision, setRevision] = useState(0);
   const [lineCount, setLineCount] = useState(sampleCode.split("\n").length);
   const [font, setFont] = useState("Intel One Mono");
   const [fontSize, setFontSize] = useState(14);
@@ -67,15 +77,10 @@ function App() {
   const [lineNumbers, setLineNumbers] = useState(true);
   const [scale, setScale] = useState(2);
   const [size, setSize] = useState<WindowSize>({ width: 800, height: 600 });
-  const [minimum, setMinimum] = useState<WindowSize>({
-    width: 320,
-    height: 200,
-  });
   const [availableWidth, setAvailableWidth] = useState(1000);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState("");
   const stage = useRef<HTMLDivElement>(null);
-  const viewport = useRef<HTMLDivElement>(null);
   const drag = useRef<{
     x: number;
     y: number;
@@ -85,51 +90,24 @@ function App() {
   const skipped = parseSkippedLines(skip, lineCount, startLine);
   const zoom = Math.min(1, availableWidth / size.width);
   const options: BaseCodeOptions = {
-    theme: mode === "dark" ? "github-dark" : "github-light",
+    theme: palette.name,
     themeType: mode,
     disableFileHeader: true,
     disableLineNumbers: !lineNumbers,
     overflow: "wrap",
-    unsafeCSS: buildPreviewCSS({
-      font,
-      fontSize,
-      startLine,
-      skipped: skipped.lines,
-      lineCount,
-    }),
+    unsafeCSS:
+      buildPreviewCSS({
+        font,
+        fontSize,
+        startLine,
+        skipped: skipped.lines,
+        lineCount,
+      }) + themeCSS(palette),
   };
   const preset =
     windowSizes.find(
       (item) => item.width === size.width && item.height === size.height,
     )?.name ?? "custom";
-
-  const measure = useCallback(
-    (container: HTMLElement) => {
-      const measured = measureMinimumWindow(container, showHeader);
-      if (!measured) return;
-      setMinimum((previous) =>
-        previous.width === measured.width && previous.height === measured.height
-          ? previous
-          : measured,
-      );
-      setSize((previous) => {
-        const next = constrainWindowSize(previous, measured);
-        return previous.width === next.width && previous.height === next.height
-          ? previous
-          : next;
-      });
-    },
-    [showHeader],
-  );
-
-  const onPostRender = useCallback(
-    (container: HTMLElement) => {
-      requestAnimationFrame(() => {
-        if (container.isConnected) measure(container);
-      });
-    },
-    [measure],
-  );
 
   useEffect(() => {
     const element = stage.current;
@@ -142,27 +120,46 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const container =
-        viewport.current?.querySelector<HTMLElement>("diffs-container");
-      if (container) measure(container);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [size.width, measure]);
-
-  useEffect(() => {
-    let active = true;
-    void document.fonts.load(`${fontSize}px "${font}"`).then(() => {
-      requestAnimationFrame(() => {
-        const container =
-          viewport.current?.querySelector<HTMLElement>("diffs-container");
-        if (active && container) measure(container);
+    if (!container?.shadowRoot) return;
+    let scheduled = 0;
+    function measure() {
+      if (!container) return;
+      const measured = measureMinimumWindow(container);
+      if (!measured) return;
+      setMinimum((previous) =>
+        previous.width === measured.width && previous.height === measured.height
+          ? previous
+          : measured,
+      );
+      setSize((previous) => {
+        const next = constrainWindowSize(previous, measured);
+        return previous.width === next.width && previous.height === next.height
+          ? previous
+          : next;
       });
+    }
+    function scheduleMeasure() {
+      cancelAnimationFrame(scheduled);
+      scheduled = requestAnimationFrame(measure);
+    }
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    resizeObserver.observe(container);
+    const mutationObserver = new MutationObserver(scheduleMeasure);
+    mutationObserver.observe(container.shadowRoot, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
     });
+    document.fonts.addEventListener("loadingdone", scheduleMeasure);
+    scheduleMeasure();
     return () => {
-      active = false;
+      cancelAnimationFrame(scheduled);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      document.fonts.removeEventListener("loadingdone", scheduleMeasure);
     };
-  }, [font, fontSize, revision, skip, startLine, lineNumbers, measure]);
+  }, [container, showHeader, showPadding]);
 
   function resizeTo(next: WindowSize) {
     setSize(constrainWindowSize(next, minimum));
@@ -170,15 +167,47 @@ function App() {
 
   function reset() {
     setMode("dark");
+    setTheme(themes[0]);
     setFont("Intel One Mono");
     setFontSize(14);
     setStartLine(1);
     setSkip("");
     setLineNumbers(true);
     setShowHeader(true);
+    setRoundedCorners(true);
+    setShowPadding(false);
     setScale(2);
     setSize({ width: 800, height: 600 });
     setMessage("");
+    setFormatError("");
+  }
+
+  async function prettyPrint() {
+    if (formatting || !canFormat(file.lang)) return;
+    const contents = code.current;
+    const language = file.lang;
+    const request = ++formatRequest.current;
+    setFormatting(true);
+    setFormatError("");
+    try {
+      const formatted = await formatCode(contents, language);
+      // Don't replace edits or a language change made while the formatter loads.
+      if (request !== formatRequest.current || code.current !== contents)
+        return;
+      code.current = formatted;
+      setLineCount(formatted.split("\n").length);
+      setFile({ name: filename, contents: formatted, lang: language });
+    } catch (error) {
+      if (request === formatRequest.current) {
+        setFormatError(
+          error instanceof Error
+            ? error.message
+            : "Could not format this code.",
+        );
+      }
+    } finally {
+      setFormatting(false);
+    }
   }
 
   function startResize(event: PointerEvent<HTMLButtonElement>) {
@@ -231,11 +260,14 @@ function App() {
         file: { name: filename, contents: code.current, lang: file.lang },
         size,
         mode,
+        theme: palette,
         options,
         scale,
         font,
         fontSize,
         showHeader,
+        roundedCorners,
+        showPadding,
       });
     } catch (error) {
       setMessage(
@@ -262,18 +294,49 @@ function App() {
             aria-label="Language"
             className={`${fieldClasses} w-32`}
             value={file.lang}
-            onChange={(event) =>
+            onChange={(event) => {
+              formatRequest.current++;
+              setFormatError("");
               setFile({
                 name: filename,
                 contents: code.current,
                 lang: event.target.value,
-              })
-            }
+              });
+            }}
           >
             {languages.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
+            ))}
+          </select>
+          <button
+            className={iconClasses}
+            aria-label="Format code"
+            title={
+              canFormat(file.lang)
+                ? "Format code"
+                : "Formatting is not available for this language"
+            }
+            disabled={formatting || !canFormat(file.lang)}
+            aria-busy={formatting}
+            onClick={prettyPrint}
+          >
+            <WandSparkles size={15} />
+          </button>
+          <select
+            aria-label="Theme"
+            className={`${fieldClasses} w-28`}
+            value={theme.label}
+            onChange={(event) => {
+              const next = themes.find(
+                (item) => item.label === event.target.value,
+              );
+              if (next) setTheme(next);
+            }}
+          >
+            {themes.map((item) => (
+              <option key={item.label}>{item.label}</option>
             ))}
           </select>
           <div className="flex gap-0.5 rounded-md bg-field p-0.5">
@@ -313,9 +376,13 @@ function App() {
             className="relative shrink-0"
             style={{ width: size.width, height: size.height, zoom }}
           >
-            <div data-code-window className={`${frameClasses} h-full w-full`}>
+            <div
+              data-code-window
+              style={themeStyle(palette)}
+              className={`${frameClasses} ${roundedCorners ? "rounded-lg" : "rounded-none"} h-full w-full`}
+            >
               {showHeader && (
-                <div className={frameHeaderClasses}>
+                <div data-code-header className={frameHeaderClasses}>
                   <input
                     aria-label="Filename"
                     className="m-0 h-full w-full truncate border-0 bg-transparent p-0 text-xs text-inherit `-outline-offset-4"
@@ -326,19 +393,19 @@ function App() {
                 </div>
               )}
               <div
-                ref={viewport}
                 data-code-body
-                className={`${frameBodyClasses} overflow-hidden`}
+                className={`${frameBodyClasses} ${showPadding ? "py-3" : "py-0"} overflow-hidden`}
               >
                 <EditProvider createEditor={createEditor}>
                   <File
                     file={file}
                     edit
-                    options={{ ...options, onPostRender }}
+                    options={{ ...options, onPostRender: setContainer }}
                     onEditChange={(event) => {
+                      formatRequest.current++;
+                      setFormatError("");
                       code.current = event.file.contents;
                       setLineCount(event.file.contents.split("\n").length);
-                      setRevision((value) => value + 1);
                     }}
                   />
                 </EditProvider>
@@ -382,6 +449,14 @@ function App() {
           aria-label="Screenshot settings"
           className="space-y-4 rounded-xl border border-border bg-panel p-4 md:col-start-2 md:row-start-2"
         >
+          {formatError && (
+            <p
+              role="alert"
+              className="whitespace-pre-wrap text-xs text-red-400"
+            >
+              {formatError}
+            </p>
+          )}
           <section className={sectionClasses}>
             <h2 className={headingClasses}>Font</h2>
             <label className="block space-y-1.5 text-xs text-secondary">
@@ -487,28 +562,21 @@ function App() {
                 Custom size
               </option>
               {windowSizes.map((item) => (
-                <option
-                  key={item.name}
-                  disabled={
-                    item.width < minimum.width || item.height < minimum.height
-                  }
-                >
-                  {item.name}
-                </option>
+                <option key={item.name}>{item.name}</option>
               ))}
             </select>
             <div className="flex items-center gap-2 text-xs text-muted">
               <input
                 aria-label="Window width"
                 type="number"
-                min={Math.max(320, minimum.width)}
+                min={minimum.width}
                 max={Math.max(2400, minimum.width)}
                 className={`${fieldClasses} min-w-0 w-0 flex-1`}
                 value={size.width}
                 onChange={(event) =>
                   resizeTo({
                     ...size,
-                    width: Number(event.target.value) || minimum.width,
+                    width: Number(event.target.value) || 1,
                   })
                 }
               />
@@ -516,14 +584,14 @@ function App() {
               <input
                 aria-label="Window height"
                 type="number"
-                min={Math.max(200, minimum.height)}
+                min={minimum.height}
                 max={Math.max(1600, minimum.height)}
                 className={`${fieldClasses} min-w-0 w-0 flex-1`}
                 value={size.height}
                 onChange={(event) =>
                   resizeTo({
                     ...size,
-                    height: Number(event.target.value) || minimum.height,
+                    height: Number(event.target.value) || 1,
                   })
                 }
               />
@@ -536,6 +604,24 @@ function App() {
                 onChange={(event) => setShowHeader(event.target.checked)}
               />
               Filename header
+            </label>
+            <label className="flex items-center gap-2 text-xs text-secondary">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-accent"
+                checked={roundedCorners}
+                onChange={(event) => setRoundedCorners(event.target.checked)}
+              />
+              Rounded corners
+            </label>
+            <label className="flex items-center gap-2 text-xs text-secondary">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-accent"
+                checked={showPadding}
+                onChange={(event) => setShowPadding(event.target.checked)}
+              />
+              Padding
             </label>
             {!showHeader && (
               <label className="block space-y-1.5 text-xs text-secondary">

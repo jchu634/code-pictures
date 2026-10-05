@@ -3,28 +3,36 @@ import type { FileContents, BaseCodeOptions } from "@pierre/diffs";
 import { toPng } from "html-to-image";
 import { frameClasses, frameHeaderClasses, frameBodyClasses } from "./frame";
 import type { WindowSize } from "./frame";
+import type { CodeTheme } from "./themes";
+import { themeStyle } from "./themes";
 
 export async function exportScreenshot({
   file,
   size,
   mode,
+  theme,
   options,
   scale,
   font,
   fontSize,
   showHeader,
+  roundedCorners,
+  showPadding,
 }: {
   file: FileContents;
   size: WindowSize;
   mode: "dark" | "light";
+  theme: CodeTheme;
   options: BaseCodeOptions;
   scale: number;
   font: string;
   fontSize: number;
   showHeader: boolean;
+  roundedCorners: boolean;
+  showPadding: boolean;
 }): Promise<void> {
   await preloadHighlighter({
-    themes: ["github-dark", "github-light"],
+    themes: [theme.name],
     langs: [file.lang ?? "text"],
   });
   await document.fonts.load(`${fontSize}px "${font}"`);
@@ -35,14 +43,17 @@ export async function exportScreenshot({
     "position:fixed;left:-100000px;top:0;pointer-events:none";
   staging.setAttribute("aria-hidden", "true");
   const frame = document.createElement("div");
-  frame.className = `${mode} ${frameClasses}`;
+  frame.className = `${mode} ${frameClasses} ${roundedCorners ? "rounded-lg" : "rounded-none"}`;
   frame.style.width = `${size.width}px`;
   frame.style.height = `${size.height}px`;
+  for (const [property, value] of Object.entries(themeStyle(theme))) {
+    frame.style.setProperty(property, value);
+  }
   const header = document.createElement("div");
   header.className = `${frameHeaderClasses} truncate`;
   header.textContent = file.name || "untitled";
   const body = document.createElement("div");
-  body.className = `${frameBodyClasses} overflow-hidden`;
+  body.className = `${frameBodyClasses} ${showPadding ? "py-3" : "py-0"} overflow-hidden`;
   const content = document.createElement("div");
   const container = document.createElement("diffs-container");
   content.append(container);
