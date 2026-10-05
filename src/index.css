@@ -12,6 +12,8 @@
   --color-muted: #787580;
   --color-secondary: #625e70;
   --color-accent: #bfa7ef;
+  --color-code-background: #ffffff;
+  --color-code-foreground: #24292e;
 }
 
 @layer base {
@@ -23,10 +25,12 @@
     --color-ink: #eeedf2;
     --color-muted: #8c8d97;
     --color-secondary: #b6b5c0;
+    --color-code-background: #24292e;
+    --color-code-foreground: #e1e4e8;
   }
 
   body {
-    @apply m-0 min-w-[360px] font-sans antialiased;
+    @apply m-0 font-sans antialiased;
   }
   button {
     @apply cursor-pointer touch-manipulation;
