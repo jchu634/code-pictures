@@ -18,7 +18,37 @@ export function constrainWindowSize(
   };
 }
 
-export function measureMinimumWindow(container: HTMLElement): WindowSize | null {
+export function measureMinimumWindow(
+  container: HTMLElement,
+): WindowSize | null {
+  return measureWindow(container, false);
+}
+
+export function measureFittedWindow(container: HTMLElement): WindowSize | null {
+  const root = container.shadowRoot;
+  if (!root) return null;
+  const rows = [
+    ...root.querySelectorAll<HTMLElement>("[data-content] [data-line]"),
+  ];
+  const previousStyles = rows.map((row) => row.getAttribute("style"));
+  // Measure unwrapped content so fitting a narrow frame also restores its width.
+  for (const row of rows)
+    row.style.setProperty("white-space", "pre", "important");
+  try {
+    return measureWindow(container, true);
+  } finally {
+    rows.forEach((row, index) => {
+      const previous = previousStyles[index];
+      if (previous == null) row.removeAttribute("style");
+      else row.setAttribute("style", previous);
+    });
+  }
+}
+
+function measureWindow(
+  container: HTMLElement,
+  fitContent: boolean,
+): WindowSize | null {
   const root = container.shadowRoot;
   const pre = root?.querySelector<HTMLElement>("pre");
   const body = container.closest<HTMLElement>("[data-code-body]");
@@ -43,9 +73,18 @@ export function measureMinimumWindow(container: HTMLElement): WindowSize | null 
     const characterWidth =
       context?.measureText(marker ? "···" : "M").width ??
       parseFloat(style.fontSize);
+    let textWidth = characterWidth;
+    if (fitContent && !marker) {
+      const range = document.createRange();
+      range.selectNodeContents(row);
+      textWidth = Math.max(
+        characterWidth,
+        range.getBoundingClientRect().width / zoom,
+      );
+    }
     contentWidth = Math.max(
       contentWidth,
-      characterWidth +
+      textWidth +
         parseFloat(style.paddingLeft) +
         parseFloat(style.paddingRight),
     );
@@ -76,5 +115,4 @@ export const frameClasses =
   "flex flex-col overflow-hidden border border-black/10 bg-code-background text-code-foreground dark:border-white/10";
 export const frameHeaderClasses =
   "flex h-11 shrink-0 items-center border-b border-black/8 px-[18px] text-xs dark:border-white/8";
-export const frameBodyClasses =
-  "min-h-0 flex-1 [&_diffs-container]:block";
+export const frameBodyClasses = "min-h-0 flex-1 [&_diffs-container]:block";
