@@ -2,6 +2,8 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { FileContents, FileDiffMetadata } from "@pierre/diffs";
 import type { LineSettings } from "./LineSettingsFields";
 
+export type DiffLayout = "side-by-side" | "stacked";
+
 type DiffSideSettings = LineSettings & {
   skipped: Set<number>;
   lineCount: number;
@@ -10,15 +12,20 @@ type DiffSideSettings = LineSettings & {
 export function buildDiffCSS({
   font,
   fontSize,
+  layout = "side-by-side",
   before,
   after,
 }: {
+  layout?: DiffLayout;
   font: string;
   fontSize: number;
   before: DiffSideSettings;
   after: DiffSideSettings;
 }): string {
   let css = `:host { --diffs-font-family: "${font}", monospace; --diffs-font-size: ${fontSize}px; --diffs-line-height: ${Math.round(fontSize * 1.65)}px; --diffs-gap-block: 0px; --diffs-gap-inline: 20px; } pre { overflow: hidden !important; } [data-code] { overflow: visible !important; }`;
+  if (layout === "stacked") {
+    css += `pre { display: flex !important; flex-direction: column; } [data-code] { display: grid !important; width: 100%; position: relative; padding-top: 33px; grid-template-columns: minmax(min-content, max-content) minmax(0, 1fr); grid-template-rows: auto; } [data-gutter] { grid-column: 1 !important; } [data-content] { grid-column: 2 !important; } [data-code]::before { position: absolute; inset: 0 0 auto; height: 33px; box-sizing: border-box; padding: 8px 20px; font: 12px/16px var(--diffs-header-font-fallback); color: var(--diffs-fg-number); border-bottom: 1px solid color-mix(in srgb, var(--diffs-fg) 8%, transparent); } [data-deletions]::before { content: "Before"; } [data-additions]::before { content: "After"; border-top: 1px solid color-mix(in srgb, var(--diffs-fg) 8%, transparent); }`;
+  }
   for (const [side, settings] of [
     ["deletions", before],
     ["additions", after],

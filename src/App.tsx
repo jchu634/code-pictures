@@ -14,6 +14,8 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { buildDiffCSS, buildScreenshotDiff } from "./diff";
+import type { DiffLayout } from "./diff";
+import { NumberInput } from "./NumberInput";
 import { LineSettingsFields } from "./LineSettingsFields";
 import { canFormat, formatCode } from "./format";
 import { themes, themeStyle, themeCSS } from "./themes";
@@ -65,6 +67,7 @@ const headingClasses =
 
 function App() {
   const [editorMode, setEditorMode] = useState<"code" | "diff">("code");
+  const [diffLayout, setDiffLayout] = useState<DiffLayout>("side-by-side");
   const [before, setBefore] = useState(sampleCode);
   const [after, setAfter] = useState(
     sampleCode.replace("Hello World", "Hello there"),
@@ -124,6 +127,7 @@ function App() {
     y: number;
     size: WindowSize;
     zoom: number;
+    axis: "both" | "width" | "height";
   } | null>(null);
   const skipped = parseSkippedLines(skip, lineCount, startLine);
   const sharedLines = { startLine, skip, lineNumbers };
@@ -169,6 +173,7 @@ function App() {
     overflow: "wrap",
     unsafeCSS:
       buildDiffCSS({
+        layout: diffLayout,
         font,
         fontSize,
         before: {
@@ -301,6 +306,7 @@ function App() {
     setTheme(themes[0]);
     setFont("Intel One Mono");
     setFontSize(14);
+    setDiffLayout("side-by-side");
     setLineTarget("synced");
     setBeforeLines({ startLine: 1, skip: "", lineNumbers: true });
     setAfterLines({ startLine: 1, skip: "", lineNumbers: true });
@@ -374,26 +380,45 @@ function App() {
     }
   }
 
-  function startResize(event: PointerEvent<HTMLButtonElement>) {
+  function startResize(
+    event: PointerEvent<HTMLButtonElement>,
+    axis: "both" | "width" | "height" = "both",
+  ) {
     event.preventDefault();
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.clientX, y: event.clientY, size, zoom };
+    drag.current = { x: event.clientX, y: event.clientY, size, zoom, axis };
   }
 
   function resize(event: PointerEvent<HTMLButtonElement>) {
     const initial = drag.current;
     if (!initial) return;
     resizeTo({
-      width: initial.size.width + (event.clientX - initial.x) / initial.zoom,
-      height: initial.size.height + (event.clientY - initial.y) / initial.zoom,
+      width:
+        initial.size.width +
+        (initial.axis === "height"
+          ? 0
+          : ((event.clientX - initial.x) / initial.zoom) *
+            (initial.axis === "width" ? -1 : 1)),
+      height:
+        initial.size.height +
+        (initial.axis === "width"
+          ? 0
+          : (event.clientY - initial.y) / initial.zoom),
     });
   }
 
-  function resizeWithKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
+  function resizeWithKeyboard(
+    event: KeyboardEvent<HTMLButtonElement>,
+    axis: "both" | "width" | "height" = "both",
+  ) {
     if (
       !["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown"].includes(event.key)
     )
+      return;
+    if (axis === "width" && !["ArrowLeft", "ArrowRight"].includes(event.key))
+      return;
+    if (axis === "height" && !["ArrowUp", "ArrowDown"].includes(event.key))
       return;
     event.preventDefault();
     const step = event.shiftKey ? 40 : 10;
@@ -404,7 +429,8 @@ function App() {
           ? step
           : event.key === "ArrowLeft"
             ? -step
-            : 0),
+            : 0) *
+          (axis === "width" ? -1 : 1),
       height:
         size.height +
         (event.key === "ArrowDown"
@@ -447,6 +473,7 @@ function App() {
           editorMode === "diff"
             ? {
                 kind: "diff",
+                layout: diffLayout,
                 oldFile: { name: filename, contents: before, lang: file.lang },
                 newFile: { name: filename, contents: after, lang: file.lang },
                 options: diffOptions,
@@ -685,12 +712,14 @@ function App() {
               >
                 {editorMode === "diff" ? (
                   <>
-                    <div className="grid grid-cols-2 border-b border-black/8 text-xs text-secondary dark:border-white/8">
-                      <span className="px-5 py-2">Before</span>
-                      <span className="border-l border-black/8 px-5 py-2 dark:border-white/8">
-                        After
-                      </span>
-                    </div>
+                    {diffLayout === "side-by-side" && (
+                      <div className="grid grid-cols-2 border-b border-black/8 text-xs text-secondary dark:border-white/8">
+                        <span className="px-5 py-2">Before</span>
+                        <span className="border-l border-black/8 px-5 py-2 dark:border-white/8">
+                          After
+                        </span>
+                      </div>
+                    )}
                     <FileDiff
                       fileDiff={buildScreenshotDiff(
                         { name: filename, contents: before, lang: file.lang },
@@ -716,11 +745,50 @@ function App() {
                 )}
               </div>
             </div>
+            {(["width", "height"] satisfies ("width" | "height")[]).map(
+              (axis) => (
+                <button
+                  key={axis}
+                  aria-label={`Resize window ${axis}`}
+                  title={`Drag to resize ${axis}. ${axis === "width" ? "Left/Right" : "Up/Down"} arrow keys adjust by 10 pixels; Shift adjusts by 40.`}
+                  className={`absolute grid size-8 touch-none place-items-center rounded-md text-muted hover:bg-field hover:text-ink ${axis === "width" ? "-left-4 top-1/2 -translate-y-1/2 cursor-ew-resize" : "-bottom-4 left-1/2 -translate-x-1/2 cursor-ns-resize"}`}
+                  onPointerDown={(event) => startResize(event, axis)}
+                  onPointerMove={resize}
+                  onPointerUp={() => {
+                    drag.current = null;
+                  }}
+                  onPointerCancel={() => {
+                    drag.current = null;
+                  }}
+                  onLostPointerCapture={() => {
+                    drag.current = null;
+                  }}
+                  onKeyDown={(event) => resizeWithKeyboard(event, axis)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                  >
+                    <path
+                      d={
+                        axis === "width" ? "M6 3v10M10 3v10" : "M3 6h10M3 10h10"
+                      }
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              ),
+            )}
             <button
               aria-label="Resize code window"
               title="Drag to resize. Arrow keys adjust by 10 pixels; Shift adjusts by 40."
               className="absolute -right-2 -bottom-2 grid size-7 touch-none cursor-nwse-resize place-items-center rounded-md text-muted hover:bg-field hover:text-ink"
-              onPointerDown={startResize}
+              onPointerDown={(event) => startResize(event)}
               onPointerMove={resize}
               onPointerUp={() => {
                 drag.current = null;
@@ -731,7 +799,7 @@ function App() {
               onLostPointerCapture={() => {
                 drag.current = null;
               }}
-              onKeyDown={resizeWithKeyboard}
+              onKeyDown={(event) => resizeWithKeyboard(event)}
             >
               <svg
                 aria-hidden="true"
@@ -779,9 +847,9 @@ function App() {
             <label className={labelClasses}>
               Font size
               <div className="flex items-center gap-1.5">
-                <input
+                <NumberInput
                   aria-label="Font size"
-                  type="number"
+                  onWheelValue={(value) => setFontSize(value)}
                   min="11"
                   max="24"
                   className={`${fieldClasses} w-16`}
@@ -864,6 +932,21 @@ function App() {
           </section>
           <section className={sectionClasses}>
             <h2 className={headingClasses}>Window</h2>
+            {editorMode === "diff" && (
+              <label className={labelClasses}>
+                <span>Stack diffs vertically</span>
+                <input
+                  type="checkbox"
+                  className="size-3.5 accent-accent"
+                  checked={diffLayout === "stacked"}
+                  onChange={(event) =>
+                    setDiffLayout(
+                      event.target.checked ? "stacked" : "side-by-side",
+                    )
+                  }
+                />
+              </label>
+            )}
             <select
               aria-label="Window size preset"
               className={`${fieldClasses} w-full`}
@@ -883,9 +966,9 @@ function App() {
               ))}
             </select>
             <div className="flex items-center gap-2 text-xs text-muted">
-              <input
+              <NumberInput
                 aria-label="Window width"
-                type="number"
+                onWheelValue={(value) => resizeTo({ ...size, width: value })}
                 min={minimum.width}
                 max={Math.max(2400, minimum.width)}
                 className={`${fieldClasses} min-w-0 w-0 flex-1`}
@@ -898,9 +981,9 @@ function App() {
                 }
               />
               <span>×</span>
-              <input
+              <NumberInput
                 aria-label="Window height"
-                type="number"
+                onWheelValue={(value) => resizeTo({ ...size, height: value })}
                 min={minimum.height}
                 max={Math.max(1600, minimum.height)}
                 className={`${fieldClasses} min-w-0 w-0 flex-1`}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NumberInput } from "./NumberInput";
 
 export type LineSettings = {
   startLine: number;
@@ -28,9 +29,12 @@ export function LineSettingsFields({
       )}
       <label className="flex items-center justify-between gap-3 text-xs text-secondary">
         Start line
-        <input
+        <NumberInput
           aria-label={label ? `${label} start line` : "Start line"}
-          type="number"
+          onWheelValue={(value) => {
+            if (startLineDraft !== null) setStartLineDraft(String(value));
+            onChange({ ...settings, startLine: value });
+          }}
           min="1"
           max="999999"
           className={`${field} w-20`}

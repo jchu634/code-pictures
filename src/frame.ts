@@ -90,16 +90,24 @@ function measureWindow(
     );
   }
   const gutters = [...root.querySelectorAll<HTMLElement>("[data-gutter]")];
-  const columns = root.querySelectorAll("[data-content]").length;
+  const stacked = getComputedStyle(pre).display === "flex";
+  const columns = stacked ? 1 : root.querySelectorAll("[data-content]").length;
   const labels = body.querySelector<HTMLElement>(".grid");
   return {
     width: Math.ceil(
       contentWidth * Math.max(1, columns) +
-        gutters.reduce(
-          (width, gutter) =>
-            width + gutter.getBoundingClientRect().width / zoom,
-          0,
-        ) +
+        (stacked
+          ? Math.max(
+              0,
+              ...gutters.map(
+                (gutter) => gutter.getBoundingClientRect().width / zoom,
+              ),
+            )
+          : gutters.reduce(
+              (width, gutter) =>
+                width + gutter.getBoundingClientRect().width / zoom,
+              0,
+            )) +
         parseFloat(bodyStyle.paddingLeft) +
         parseFloat(bodyStyle.paddingRight) +
         parseFloat(frameStyle.borderLeftWidth) +
