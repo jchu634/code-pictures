@@ -3,7 +3,7 @@ import type { ComponentProps, KeyboardEvent, PointerEvent } from "react";
 import { File, EditProvider } from "@pierre/diffs/react";
 import { Editor } from "@pierre/diffs/edit";
 import type { BaseCodeOptions } from "@pierre/diffs";
-import { Download, Moon, RotateCcw, Sun, WandSparkles } from "lucide-react";
+import { Download, Minimize2, Moon, RotateCcw, Sun, WandSparkles } from "lucide-react";
 import { canFormat, formatCode } from "./format";
 import { themes, themeStyle, themeCSS } from "./themes";
 import {
@@ -15,6 +15,7 @@ import {
 import {
   constrainWindowSize,
   measureMinimumWindow,
+  measureFittedWindow,
   windowSizes,
   frameClasses,
   frameHeaderClasses,
@@ -165,6 +166,12 @@ function App() {
     setSize(constrainWindowSize(next, minimum));
   }
 
+  function fitToCode() {
+    if (!container) return;
+    const fitted = measureFittedWindow(container);
+    if (fitted) setSize(constrainWindowSize(fitted));
+  }
+
   function reset() {
     setMode("dark");
     setTheme(themes[0]);
@@ -288,7 +295,7 @@ function App() {
         <div
           role="toolbar"
           aria-label="Editor controls"
-          className="flex w-fit max-w-full flex-wrap items-center justify-end gap-2 justify-self-end rounded-lg border border-border bg-panel p-1.5 mr-3 md:col-start-1 md:row-start-1"
+          className="mr-3 flex w-fit max-w-full flex-wrap items-center justify-end gap-2 justify-self-end p-1.5 md:col-start-1 md:row-start-1"
         >
           <select
             aria-label="Language"
@@ -310,20 +317,6 @@ function App() {
               </option>
             ))}
           </select>
-          <button
-            className={iconClasses}
-            aria-label="Format code"
-            title={
-              canFormat(file.lang)
-                ? "Format code"
-                : "Formatting is not available for this language"
-            }
-            disabled={formatting || !canFormat(file.lang)}
-            aria-busy={formatting}
-            onClick={prettyPrint}
-          >
-            <WandSparkles size={15} />
-          </button>
           <select
             aria-label="Theme"
             className={`${fieldClasses} w-28`}
@@ -359,6 +352,29 @@ function App() {
               <Moon size={15} />
             </button>
           </div>
+          <button
+            className={iconClasses}
+            aria-label="Format code"
+            title={
+              canFormat(file.lang)
+                ? "Format code"
+                : "Formatting is not available for this language"
+            }
+            disabled={formatting || !canFormat(file.lang)}
+            aria-busy={formatting}
+            onClick={prettyPrint}
+          >
+            <WandSparkles size={15} />
+          </button>
+          <button
+            className={iconClasses}
+            aria-label="Fit window to code"
+            title="Fit window to code"
+            disabled={!container}
+            onClick={fitToCode}
+          >
+            <Minimize2 size={15} />
+          </button>
           <button
             className={iconClasses}
             aria-label="Reset appearance"
