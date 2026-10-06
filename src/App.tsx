@@ -3,7 +3,16 @@ import type { ComponentProps, KeyboardEvent, PointerEvent } from "react";
 import { File, EditProvider } from "@pierre/diffs/react";
 import { Editor } from "@pierre/diffs/edit";
 import type { BaseCodeOptions } from "@pierre/diffs";
-import { Download, Minimize2, Moon, RotateCcw, Sun, WandSparkles } from "lucide-react";
+import {
+  ChevronDown,
+  Copy,
+  Download,
+  Minimize2,
+  Moon,
+  RotateCcw,
+  Sun,
+  WandSparkles,
+} from "lucide-react";
 import { canFormat, formatCode } from "./format";
 import { themes, themeStyle, themeCSS } from "./themes";
 import {
@@ -23,6 +32,7 @@ import {
 } from "./frame";
 import type { WindowSize } from "./frame";
 import { exportScreenshot } from "./exportScreenshot";
+import { downloadImage, imageFilename } from "./saveImage";
 
 const createEditor: ComponentProps<typeof EditProvider>["createEditor"] = (
   type,
@@ -80,6 +90,10 @@ function App() {
   const [size, setSize] = useState<WindowSize>({ width: 800, height: 600 });
   const [availableWidth, setAvailableWidth] = useState(1000);
   const [exporting, setExporting] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportControls = useRef<HTMLDivElement>(null);
+  const exportToggle = useRef<HTMLButtonElement>(null);
+  const [exportError, setExportError] = useState(false);
   const [message, setMessage] = useState("");
   const stage = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -109,6 +123,20 @@ function App() {
     windowSizes.find(
       (item) => item.width === size.width && item.height === size.height,
     )?.name ?? "custom";
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function dismiss(event: globalThis.PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !exportControls.current?.contains(event.target)
+      ) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [exportMenuOpen]);
 
   useEffect(() => {
     const element = stage.current;
@@ -258,12 +286,34 @@ function App() {
     });
   }
 
-  async function download() {
+  async function download(action: "save-as" | "save" | "copy") {
     if (exporting || skipped.error) return;
+    setExportMenuOpen(false);
+
     setExporting(true);
     setMessage("");
+    setExportError(false);
     try {
-      await exportScreenshot({
+      const name = imageFilename(filename);
+      // Open the picker before rendering so the click's user activation is retained.
+      const handle =
+        action === "save-as" && window.showSaveFilePicker
+          ? await window.showSaveFilePicker({
+              suggestedName: name,
+              types: [
+                { description: "PNG image", accept: { "image/png": [".png"] } },
+              ],
+            })
+          : null;
+      if (
+        action === "copy" &&
+        (!navigator.clipboard?.write || typeof ClipboardItem === "undefined")
+      ) {
+        throw new Error(
+          "Copying images is not available in this browser. Use Save instead.",
+        );
+      }
+      const image = exportScreenshot({
         file: { name: filename, contents: code.current, lang: file.lang },
         size,
         mode,
@@ -276,11 +326,35 @@ function App() {
         roundedCorners,
         showPadding,
       });
+      if (action === "copy") {
+        // Pass the render promise directly to preserve clipboard activation in Safari.
+        await Promise.all([
+          navigator.clipboard.write([
+            new ClipboardItem({ "image/png": image }),
+          ]),
+          image,
+        ]);
+        setMessage("Image copied to clipboard.");
+      } else if (handle) {
+        const blob = await image;
+        const writable = await handle.createWritable();
+        try {
+          await writable.write(blob);
+          await writable.close();
+        } catch (error) {
+          await writable.abort().catch(() => {});
+          throw error;
+        }
+      } else {
+        downloadImage(await image, name);
+      }
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setExportError(true);
       setMessage(
         error instanceof Error
-          ? `Export failed: ${error.message}`
-          : "Export failed. Please try again.",
+          ? `${action === "copy" ? "Copy" : "Save"} failed: ${error.message}`
+          : "Could not export the image. Please try again.",
       );
     } finally {
       setExporting(false);
@@ -664,16 +738,78 @@ function App() {
                 <option value={3}>3×</option>
               </select>
             </label>
-            <button
-              onClick={download}
-              disabled={exporting || !!skipped.error}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-accent px-3 text-xs font-medium text-[#2b203e] hover:bg-[#cfbafa]"
+            <div
+              ref={exportControls}
+              className="relative"
+              onBlur={(event) => {
+                if (
+                  event.relatedTarget instanceof Node &&
+                  !event.currentTarget.contains(event.relatedTarget)
+                ) {
+                  setExportMenuOpen(false);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && exportMenuOpen) {
+                  event.preventDefault();
+                  setExportMenuOpen(false);
+                  exportToggle.current?.focus();
+                }
+              }}
             >
-              <Download size={15} />
-              {exporting ? "Exporting…" : "Export PNG"}
-            </button>
+              <div className="flex">
+                <button
+                  onClick={() => download("save-as")}
+                  disabled={exporting || !!skipped.error}
+                  aria-busy={exporting}
+                  className="flex h-9 flex-1 items-center justify-center gap-2 rounded-l-md bg-accent px-3 text-xs font-medium text-[#2b203e] hover:bg-[#cfbafa]"
+                >
+                  <Download size={15} />
+                  {exporting ? "Exporting…" : "Save as"}
+                </button>
+                <button
+                  ref={exportToggle}
+                  aria-label="Export options"
+                  aria-expanded={exportMenuOpen}
+                  aria-controls="export-options"
+                  disabled={exporting || !!skipped.error}
+                  onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                  className="grid h-9 w-9 place-items-center rounded-r-md border-l border-[#2b203e]/20 bg-accent text-[#2b203e] hover:bg-[#cfbafa]"
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
+              {exportMenuOpen && (
+                <div
+                  id="export-options"
+                  className="absolute right-0 bottom-full z-10 mb-1 w-full rounded-md border border-border bg-panel p-1 shadow-lg"
+                >
+                  <button
+                    onClick={() => download("save-as")}
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs hover:bg-field"
+                  >
+                    <Download size={15} /> Save as
+                  </button>
+                  <button
+                    onClick={() => download("save")}
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs hover:bg-field"
+                  >
+                    <Download size={15} /> Save
+                  </button>
+                  <button
+                    onClick={() => download("copy")}
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs hover:bg-field"
+                  >
+                    <Copy size={15} /> Copy image
+                  </button>
+                </div>
+              )}
+            </div>
             {message && (
-              <p role="alert" className="text-xs text-red-400">
+              <p
+                role={exportError ? "alert" : "status"}
+                className={`text-xs ${exportError ? "text-red-400" : "text-secondary"}`}
+              >
                 {message}
               </p>
             )}

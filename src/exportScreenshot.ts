@@ -1,6 +1,6 @@
 import { File, preloadHighlighter } from "@pierre/diffs";
 import type { FileContents, BaseCodeOptions } from "@pierre/diffs";
-import { toPng } from "html-to-image";
+import { toBlob } from "html-to-image";
 import { frameClasses, frameHeaderClasses, frameBodyClasses } from "./frame";
 import type { WindowSize } from "./frame";
 import type { CodeTheme } from "./themes";
@@ -30,7 +30,7 @@ export async function exportScreenshot({
   showHeader: boolean;
   roundedCorners: boolean;
   showPadding: boolean;
-}): Promise<void> {
+}): Promise<Blob> {
   await preloadHighlighter({
     themes: [theme.name],
     langs: [file.lang ?? "text"],
@@ -70,16 +70,14 @@ export async function exportScreenshot({
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    const dataUrl = await toPng(frame, {
+    const blob = await toBlob(frame, {
       pixelRatio: scale,
       cacheBust: true,
       width: size.width,
       height: size.height,
     });
-    const link = document.createElement("a");
-    link.download = `${file.name.replace(/\.[^.]+$/, "") || "code"}.png`;
-    link.href = dataUrl;
-    link.click();
+    if (!blob) throw new Error("Could not create the PNG image.");
+    return blob;
   } finally {
     renderer.cleanUp();
     staging.remove();
