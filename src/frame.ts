@@ -89,11 +89,17 @@ function measureWindow(
         parseFloat(style.paddingRight),
     );
   }
-  const gutter = root.querySelector<HTMLElement>("[data-gutter]");
+  const gutters = [...root.querySelectorAll<HTMLElement>("[data-gutter]")];
+  const columns = root.querySelectorAll("[data-content]").length;
+  const labels = body.querySelector<HTMLElement>(".grid");
   return {
     width: Math.ceil(
-      contentWidth +
-        (gutter?.getBoundingClientRect().width ?? 0) / zoom +
+      contentWidth * Math.max(1, columns) +
+        gutters.reduce(
+          (width, gutter) =>
+            width + gutter.getBoundingClientRect().width / zoom,
+          0,
+        ) +
         parseFloat(bodyStyle.paddingLeft) +
         parseFloat(bodyStyle.paddingRight) +
         parseFloat(frameStyle.borderLeftWidth) +
@@ -101,6 +107,7 @@ function measureWindow(
     ),
     height: Math.ceil(
       pre.getBoundingClientRect().height / zoom +
+        (labels?.getBoundingClientRect().height ?? 0) / zoom +
         (header?.getBoundingClientRect().height ?? 0) / zoom +
         parseFloat(bodyStyle.paddingTop) +
         parseFloat(bodyStyle.paddingBottom) +

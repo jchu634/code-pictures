@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ComponentProps, KeyboardEvent, PointerEvent } from "react";
-import { File, EditProvider } from "@pierre/diffs/react";
+import { File, FileDiff, EditProvider } from "@pierre/diffs/react";
 import { Editor } from "@pierre/diffs/edit";
-import type { BaseCodeOptions } from "@pierre/diffs";
+import type { BaseCodeOptions, FileDiffOptions } from "@pierre/diffs";
 import {
   ChevronDown,
   Copy,
@@ -13,6 +13,8 @@ import {
   Sun,
   WandSparkles,
 } from "lucide-react";
+import { buildDiffCSS, buildScreenshotDiff } from "./diff";
+import { LineSettingsFields } from "./LineSettingsFields";
 import { canFormat, formatCode } from "./format";
 import { themes, themeStyle, themeCSS } from "./themes";
 import {
@@ -62,6 +64,27 @@ const headingClasses =
   "text-[10px] font-medium tracking-wider text-muted uppercase";
 
 function App() {
+  const [editorMode, setEditorMode] = useState<"code" | "diff">("code");
+  const [before, setBefore] = useState(sampleCode);
+  const [after, setAfter] = useState(
+    sampleCode.replace("Hello World", "Hello there"),
+  );
+  const [lineTarget, setLineTarget] = useState<"synced" | "left" | "right">(
+    "synced",
+  );
+  const diffInputs = useRef<HTMLDivElement>(null);
+  const [inputHeight, setInputHeight] = useState(144);
+  const inputHeightRef = useRef(144);
+  const [beforeLines, setBeforeLines] = useState({
+    startLine: 1,
+    skip: "",
+    lineNumbers: true,
+  });
+  const [afterLines, setAfterLines] = useState({
+    startLine: 1,
+    skip: "",
+    lineNumbers: true,
+  });
   const [mode, setMode] = useState<"dark" | "light">("dark");
   const [theme, setTheme] = useState(themes[0]);
   const palette = theme[mode];
@@ -103,6 +126,23 @@ function App() {
     zoom: number;
   } | null>(null);
   const skipped = parseSkippedLines(skip, lineCount, startLine);
+  const sharedLines = { startLine, skip, lineNumbers };
+  const effectiveBefore = beforeLines;
+  const effectiveAfter = afterLines;
+  const beforeSkipped = parseSkippedLines(
+    effectiveBefore.skip,
+    before.split("\n").length,
+    effectiveBefore.startLine,
+  );
+  const afterSkipped = parseSkippedLines(
+    effectiveAfter.skip,
+    after.split("\n").length,
+    effectiveAfter.startLine,
+  );
+  const linesError =
+    editorMode === "diff"
+      ? beforeSkipped.error || afterSkipped.error
+      : skipped.error;
   const zoom = Math.min(1, availableWidth / size.width);
   const options: BaseCodeOptions = {
     theme: palette.name,
@@ -119,10 +159,66 @@ function App() {
         lineCount,
       }) + themeCSS(palette),
   };
+  const diffOptions: FileDiffOptions<undefined, undefined> = {
+    theme: palette.name,
+    themeType: mode,
+    disableFileHeader: true,
+    diffStyle: "split",
+    expandUnchanged: true,
+    hunkSeparators: "simple",
+    overflow: "wrap",
+    unsafeCSS:
+      buildDiffCSS({
+        font,
+        fontSize,
+        before: {
+          ...effectiveBefore,
+          skipped: beforeSkipped.lines,
+          lineCount: before.split("\n").length,
+        },
+        after: {
+          ...effectiveAfter,
+          skipped: afterSkipped.lines,
+          lineCount: after.split("\n").length,
+        },
+      }) + themeCSS(palette),
+  };
   const preset =
     windowSizes.find(
       (item) => item.width === size.width && item.height === size.height,
     )?.name ?? "custom";
+
+  useEffect(() => {
+    if (editorMode !== "diff" || !diffInputs.current) return;
+    const inputs = [...diffInputs.current.querySelectorAll("textarea")];
+    function syncHeight(input: HTMLElement) {
+      const height = input.offsetHeight;
+      if (!height || height === inputHeightRef.current) return;
+      inputHeightRef.current = height;
+      setInputHeight(height);
+      for (const other of inputs) other.style.height = `${height}px`;
+    }
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target instanceof HTMLElement) syncHeight(entry.target);
+      }
+    });
+    // Native textarea resizing writes an inline height. Mirror it immediately,
+    // including when browser resize notifications are deferred.
+    const styles = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.target instanceof HTMLElement) syncHeight(record.target);
+      }
+    });
+    for (const input of inputs) {
+      observer.observe(input);
+      styles.observe(input, { attributes: true, attributeFilter: ["style"] });
+    }
+    return () => {
+      observer.disconnect();
+      styles.disconnect();
+    };
+  }, [editorMode]);
 
   useEffect(() => {
     if (!exportMenuOpen) return;
@@ -205,6 +301,9 @@ function App() {
     setTheme(themes[0]);
     setFont("Intel One Mono");
     setFontSize(14);
+    setLineTarget("synced");
+    setBeforeLines({ startLine: 1, skip: "", lineNumbers: true });
+    setAfterLines({ startLine: 1, skip: "", lineNumbers: true });
     setStartLine(1);
     setSkip("");
     setLineNumbers(true);
@@ -219,6 +318,36 @@ function App() {
 
   async function prettyPrint() {
     if (formatting || !canFormat(file.lang)) return;
+    if (editorMode === "diff") {
+      const originalBefore = before;
+      const originalAfter = after;
+      const request = ++formatRequest.current;
+      setFormatting(true);
+      setFormatError("");
+      try {
+        const [formattedBefore, formattedAfter] = await Promise.all([
+          formatCode(before, file.lang),
+          formatCode(after, file.lang),
+        ]);
+        if (request !== formatRequest.current) return;
+        setBefore((current) =>
+          current === originalBefore ? formattedBefore : current,
+        );
+        setAfter((current) =>
+          current === originalAfter ? formattedAfter : current,
+        );
+      } catch (error) {
+        if (request === formatRequest.current)
+          setFormatError(
+            error instanceof Error
+              ? error.message
+              : "Could not format this code.",
+          );
+      } finally {
+        setFormatting(false);
+      }
+      return;
+    }
     const contents = code.current;
     const language = file.lang;
     const request = ++formatRequest.current;
@@ -287,7 +416,7 @@ function App() {
   }
 
   async function download(action: "save-as" | "save" | "copy") {
-    if (exporting || skipped.error) return;
+    if (exporting || linesError) return;
     setExportMenuOpen(false);
 
     setExporting(true);
@@ -314,11 +443,26 @@ function App() {
         );
       }
       const image = exportScreenshot({
-        file: { name: filename, contents: code.current, lang: file.lang },
+        content:
+          editorMode === "diff"
+            ? {
+                kind: "diff",
+                oldFile: { name: filename, contents: before, lang: file.lang },
+                newFile: { name: filename, contents: after, lang: file.lang },
+                options: diffOptions,
+              }
+            : {
+                kind: "code",
+                file: {
+                  name: filename,
+                  contents: code.current,
+                  lang: file.lang,
+                },
+                options,
+              },
         size,
         mode,
         theme: palette,
-        options,
         scale,
         font,
         fontSize,
@@ -406,6 +550,32 @@ function App() {
               <option key={item.label}>{item.label}</option>
             ))}
           </select>
+          <div
+            role="group"
+            aria-label="Editor mode"
+            className="flex gap-0.5 rounded-md bg-field p-0.5"
+          >
+            {(["code", "diff"] satisfies ("code" | "diff")[]).map((next) => (
+              <button
+                key={next}
+                aria-pressed={editorMode === next}
+                className={`h-8 rounded-md px-3 text-xs ${editorMode === next ? "bg-border text-ink" : "text-muted hover:text-ink"}`}
+                onClick={() => {
+                  if (next === editorMode) return;
+                  formatRequest.current++;
+                  setFormatError("");
+                  if (next === "diff")
+                    setFile((current) => ({
+                      ...current,
+                      contents: code.current,
+                    }));
+                  setEditorMode(next);
+                }}
+              >
+                {next === "code" ? "Code" : "Diffs"}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-0.5 rounded-md bg-field p-0.5">
             <button
               aria-label="Light mode"
@@ -460,8 +630,35 @@ function App() {
         </div>
         <div
           ref={stage}
-          className="flex min-w-0 justify-end px-3 pb-3 md:col-start-1 md:row-start-2"
+          className="flex min-w-0 flex-col items-end gap-3 px-3 pb-3 md:col-start-1 md:row-start-2"
         >
+          {editorMode === "diff" && (
+            <div ref={diffInputs} className="grid w-full grid-cols-2 gap-3">
+              {[
+                { label: "Before", value: before, update: setBefore },
+                { label: "After", value: after, update: setAfter },
+              ].map((side) => (
+                <label
+                  key={side.label}
+                  className="space-y-1.5 text-xs text-secondary"
+                >
+                  <span>{side.label}</span>
+                  <textarea
+                    aria-label={`${side.label} code`}
+                    spellCheck={false}
+                    style={{ height: inputHeight }}
+                    className="block min-h-20 w-full resize-y rounded-md border border-border bg-field p-3 font-mono text-xs text-ink"
+                    value={side.value}
+                    onChange={(event) => {
+                      formatRequest.current++;
+                      setFormatError("");
+                      side.update(event.target.value);
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
           <div
             className="relative shrink-0"
             style={{ width: size.width, height: size.height, zoom }}
@@ -486,19 +683,37 @@ function App() {
                 data-code-body
                 className={`${frameBodyClasses} ${showPadding ? "py-3" : "py-0"} overflow-hidden`}
               >
-                <EditProvider createEditor={createEditor}>
-                  <File
-                    file={file}
-                    edit
-                    options={{ ...options, onPostRender: setContainer }}
-                    onEditChange={(event) => {
-                      formatRequest.current++;
-                      setFormatError("");
-                      code.current = event.file.contents;
-                      setLineCount(event.file.contents.split("\n").length);
-                    }}
-                  />
-                </EditProvider>
+                {editorMode === "diff" ? (
+                  <>
+                    <div className="grid grid-cols-2 border-b border-black/8 text-xs text-secondary dark:border-white/8">
+                      <span className="px-5 py-2">Before</span>
+                      <span className="border-l border-black/8 px-5 py-2 dark:border-white/8">
+                        After
+                      </span>
+                    </div>
+                    <FileDiff
+                      fileDiff={buildScreenshotDiff(
+                        { name: filename, contents: before, lang: file.lang },
+                        { name: filename, contents: after, lang: file.lang },
+                      )}
+                      options={{ ...diffOptions, onPostRender: setContainer }}
+                    />
+                  </>
+                ) : (
+                  <EditProvider createEditor={createEditor}>
+                    <File
+                      file={file}
+                      edit
+                      options={{ ...options, onPostRender: setContainer }}
+                      onEditChange={(event) => {
+                        formatRequest.current++;
+                        setFormatError("");
+                        code.current = event.file.contents;
+                        setLineCount(event.file.contents.split("\n").length);
+                      }}
+                    />
+                  </EditProvider>
+                )}
               </div>
             </div>
             <button
@@ -586,54 +801,66 @@ function App() {
           </section>
           <section className={sectionClasses}>
             <h2 className={headingClasses}>Lines</h2>
-            <label className={labelClasses}>
-              Start line
-              <input
-                type="number"
-                min="1"
-                max="999999"
-                className={`${fieldClasses} w-20`}
-                value={startLine}
-                onChange={(event) =>
-                  setStartLine(
-                    Math.max(
-                      1,
-                      Math.min(999999, Number(event.target.value) || 1),
-                    ),
-                  )
+            {editorMode === "diff" && (
+              <div
+                role="group"
+                aria-label="Line settings target"
+                className="flex rounded-md bg-field p-0.5"
+              >
+                {(
+                  ["synced", "left", "right"] satisfies (
+                    "synced" | "left" | "right"
+                  )[]
+                ).map((target) => (
+                  <button
+                    key={target}
+                    aria-pressed={lineTarget === target}
+                    className={`h-8 flex-1 rounded-md text-xs ${lineTarget === target ? "bg-border text-ink" : "text-muted hover:text-ink"}`}
+                    onClick={() => {
+                      if (target === "synced" && lineTarget !== "synced") {
+                        const settings =
+                          lineTarget === "left" ? beforeLines : afterLines;
+                        setBeforeLines(settings);
+                        setAfterLines(settings);
+                      }
+                      setLineTarget(target);
+                    }}
+                  >
+                    {target === "synced"
+                      ? "Synced"
+                      : target === "left"
+                        ? "Left"
+                        : "Right"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {editorMode === "diff" ? (
+              <LineSettingsFields
+                settings={lineTarget === "right" ? afterLines : beforeLines}
+                onChange={(next) => {
+                  if (lineTarget !== "right") setBeforeLines(next);
+                  if (lineTarget !== "left") setAfterLines(next);
+                }}
+                error={
+                  lineTarget === "synced"
+                    ? linesError
+                    : lineTarget === "left"
+                      ? beforeSkipped.error
+                      : afterSkipped.error
                 }
               />
-            </label>
-            <label className="block space-y-1.5 text-xs text-secondary">
-              Skip lines
-              <input
-                className={`${fieldClasses} w-full`}
-                value={skip}
-                onChange={(event) => setSkip(event.target.value)}
-                placeholder={`${startLine + 2}-${startLine + 4}`}
-                title="Use the displayed line numbers"
-                aria-invalid={!!skipped.error}
-                aria-describedby={skipped.error ? "skip-error" : undefined}
+            ) : (
+              <LineSettingsFields
+                settings={sharedLines}
+                onChange={(next) => {
+                  setStartLine(next.startLine);
+                  setSkip(next.skip);
+                  setLineNumbers(next.lineNumbers);
+                }}
+                error={skipped.error}
               />
-            </label>
-            {skipped.error && (
-              <p
-                id="skip-error"
-                role="alert"
-                className="text-[11px] leading-relaxed text-red-400"
-              >
-                {skipped.error}
-              </p>
             )}
-            <label className="flex items-center gap-2 text-xs text-secondary">
-              <input
-                type="checkbox"
-                className="size-3.5 accent-accent"
-                checked={lineNumbers}
-                onChange={(event) => setLineNumbers(event.target.checked)}
-              />
-              Line numbers
-            </label>
           </section>
           <section className={sectionClasses}>
             <h2 className={headingClasses}>Window</h2>
@@ -760,7 +987,7 @@ function App() {
               <div className="flex">
                 <button
                   onClick={() => download("save-as")}
-                  disabled={exporting || !!skipped.error}
+                  disabled={exporting || !!linesError}
                   aria-busy={exporting}
                   className="flex h-9 flex-1 items-center justify-center gap-2 rounded-l-md bg-accent px-3 text-xs font-medium text-[#2b203e] hover:bg-[#cfbafa]"
                 >
@@ -772,7 +999,7 @@ function App() {
                   aria-label="Export options"
                   aria-expanded={exportMenuOpen}
                   aria-controls="export-options"
-                  disabled={exporting || !!skipped.error}
+                  disabled={exporting || !!linesError}
                   onClick={() => setExportMenuOpen(!exportMenuOpen)}
                   className="grid h-9 w-9 place-items-center rounded-r-md border-l border-[#2b203e]/20 bg-accent text-[#2b203e] hover:bg-[#cfbafa]"
                 >
