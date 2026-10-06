@@ -4,6 +4,7 @@ import type {
   BaseCodeOptions,
   FileDiffOptions,
 } from "@pierre/diffs";
+import type { DiffLayout } from "./diff";
 import { buildScreenshotDiff } from "./diff";
 import { toBlob } from "html-to-image";
 import { frameClasses, frameHeaderClasses, frameBodyClasses } from "./frame";
@@ -27,6 +28,7 @@ export async function exportScreenshot({
     | { kind: "code"; file: FileContents; options: BaseCodeOptions }
     | {
         kind: "diff";
+        layout: DiffLayout;
         oldFile: FileContents;
         newFile: FileContents;
         options: FileDiffOptions<undefined, undefined>;
@@ -93,7 +95,7 @@ export async function exportScreenshot({
         label.textContent = text;
         labels.append(label);
       }
-      body.prepend(labels);
+      if (content.layout === "side-by-side") body.prepend(labels);
       renderer.render({
         fileDiff: buildScreenshotDiff(content.oldFile, content.newFile),
         fileContainer: container,
