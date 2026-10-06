@@ -1,5 +1,10 @@
-import { File, preloadHighlighter } from "@pierre/diffs";
-import type { FileContents, BaseCodeOptions } from "@pierre/diffs";
+import { File, FileDiff, preloadHighlighter } from "@pierre/diffs";
+import type {
+  FileContents,
+  BaseCodeOptions,
+  FileDiffOptions,
+} from "@pierre/diffs";
+import { buildScreenshotDiff } from "./diff";
 import { toBlob } from "html-to-image";
 import { frameClasses, frameHeaderClasses, frameBodyClasses } from "./frame";
 import type { WindowSize } from "./frame";
@@ -7,11 +12,10 @@ import type { CodeTheme } from "./themes";
 import { themeStyle } from "./themes";
 
 export async function exportScreenshot({
-  file,
+  content,
   size,
   mode,
   theme,
-  options,
   scale,
   font,
   fontSize,
@@ -19,11 +23,17 @@ export async function exportScreenshot({
   roundedCorners,
   showPadding,
 }: {
-  file: FileContents;
+  content:
+    | { kind: "code"; file: FileContents; options: BaseCodeOptions }
+    | {
+        kind: "diff";
+        oldFile: FileContents;
+        newFile: FileContents;
+        options: FileDiffOptions<undefined, undefined>;
+      };
   size: WindowSize;
   mode: "dark" | "light";
   theme: CodeTheme;
-  options: BaseCodeOptions;
   scale: number;
   font: string;
   fontSize: number;
@@ -31,6 +41,7 @@ export async function exportScreenshot({
   roundedCorners: boolean;
   showPadding: boolean;
 }): Promise<Blob> {
+  const file = content.kind === "code" ? content.file : content.newFile;
   await preloadHighlighter({
     themes: [theme.name],
     langs: [file.lang ?? "text"],
@@ -54,19 +65,42 @@ export async function exportScreenshot({
   header.textContent = file.name || "untitled";
   const body = document.createElement("div");
   body.className = `${frameBodyClasses} ${showPadding ? "py-3" : "py-0"} overflow-hidden`;
-  const content = document.createElement("div");
+  const codeContent = document.createElement("div");
   const container = document.createElement("diffs-container");
-  content.append(container);
-  body.append(content);
+  codeContent.append(container);
+  body.append(codeContent);
   if (showHeader) frame.append(header);
   frame.append(body);
   staging.append(frame);
   document.body.append(staging);
-  const renderer = new File(options);
+  const renderer =
+    content.kind === "code"
+      ? new File(content.options)
+      : new FileDiff(content.options);
 
   try {
     // Render without an editor so carets, selections, and resize controls never enter the PNG.
-    renderer.render({ file, fileContainer: container });
+    if (content.kind === "diff" && renderer instanceof FileDiff) {
+      const labels = document.createElement("div");
+      labels.className =
+        "grid grid-cols-2 border-b border-black/8 text-xs text-secondary dark:border-white/8";
+      for (const text of ["Before", "After"]) {
+        const label = document.createElement("span");
+        label.className =
+          text === "Before"
+            ? "px-5 py-2"
+            : "border-l border-black/8 px-5 py-2 dark:border-white/8";
+        label.textContent = text;
+        labels.append(label);
+      }
+      body.prepend(labels);
+      renderer.render({
+        fileDiff: buildScreenshotDiff(content.oldFile, content.newFile),
+        fileContainer: container,
+      });
+    } else if (content.kind === "code" && renderer instanceof File) {
+      renderer.render({ file: content.file, fileContainer: container });
+    }
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
