@@ -301,6 +301,15 @@ function App() {
     if (fitted) setSize(constrainWindowSize(fitted));
   }
 
+  function fitDimension(axis: "width" | "height") {
+    if (!container) return;
+    const fitted =
+      axis === "width"
+        ? measureFittedWindow(container)
+        : measureMinimumWindow(container);
+    if (fitted) resizeTo({ ...size, [axis]: fitted[axis] });
+  }
+
   function reset() {
     setMode("dark");
     setTheme(themes[0]);
@@ -750,7 +759,7 @@ function App() {
                 <button
                   key={axis}
                   aria-label={`Resize window ${axis}`}
-                  title={`Drag to resize ${axis}. ${axis === "width" ? "Left/Right" : "Up/Down"} arrow keys adjust by 10 pixels; Shift adjusts by 40.`}
+                  title={`Drag to resize ${axis}. Double-click to fit ${axis} to code. ${axis === "width" ? "Left/Right" : "Up/Down"} arrow keys adjust by 10 pixels; Shift adjusts by 40.`}
                   className={`absolute grid size-8 touch-none place-items-center rounded-md text-muted hover:bg-field hover:text-ink ${axis === "width" ? "-left-4 top-1/2 -translate-y-1/2 cursor-ew-resize" : "-bottom-4 left-1/2 -translate-x-1/2 cursor-ns-resize"}`}
                   onPointerDown={(event) => startResize(event, axis)}
                   onPointerMove={resize}
@@ -764,6 +773,7 @@ function App() {
                     drag.current = null;
                   }}
                   onKeyDown={(event) => resizeWithKeyboard(event, axis)}
+                  onDoubleClick={() => fitDimension(axis)}
                 >
                   <svg
                     aria-hidden="true"
@@ -933,8 +943,7 @@ function App() {
           <section className={sectionClasses}>
             <h2 className={headingClasses}>Window</h2>
             {editorMode === "diff" && (
-              <label className={labelClasses}>
-                <span>Stack diffs vertically</span>
+              <label className="flex items-center gap-2 text-xs text-secondary">
                 <input
                   type="checkbox"
                   className="size-3.5 accent-accent"
@@ -945,6 +954,7 @@ function App() {
                     )
                   }
                 />
+                Stack diffs vertically
               </label>
             )}
             <select
