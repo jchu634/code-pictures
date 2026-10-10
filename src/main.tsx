@@ -4,10 +4,10 @@ import "./index.css";
 import App from "./App.tsx";
 import { preloadHighlighter } from "@pierre/diffs";
 
-// Preload before mounting so the first preview contains highlighted code.
+// The editor and diff previews share this Shiki highlighter.
 await preloadHighlighter({
   themes: ["github-dark", "github-light"],
-  langs: ["typescript"],
+  langs: ["typescript", "c", "cpp"],
 });
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
