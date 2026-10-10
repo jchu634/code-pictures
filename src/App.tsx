@@ -18,6 +18,7 @@ import type { DiffLayout } from "./diff";
 import { NumberInput } from "./NumberInput";
 import { LineSettingsFields } from "./LineSettingsFields";
 import { canFormat, formatCode } from "./format";
+import { languages } from "./languages";
 import { themes, themeStyle, themeCSS } from "./themes";
 import {
   buildPreviewCSS,
@@ -42,19 +43,6 @@ const createEditor: ComponentProps<typeof EditProvider>["createEditor"] = (
   type,
   options,
 ) => new Editor(type, options);
-const languages = [
-  ["typescript", "TypeScript"],
-  ["tsx", "TSX"],
-  ["javascript", "JavaScript"],
-  ["python", "Python"],
-  ["rust", "Rust"],
-  ["go", "Go"],
-  ["html", "HTML"],
-  ["css", "CSS"],
-  ["json", "JSON"],
-  ["bash", "Shell"],
-  ["text", "Plain text"],
-];
 const fieldClasses =
   "h-8 rounded-md border border-border bg-field px-2 text-xs text-ink";
 const iconClasses =

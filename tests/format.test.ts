@@ -49,7 +49,7 @@ test("invalid code rejects instead of returning a replacement", async () => {
 });
 
 test("unsupported languages are explicitly unavailable", async () => {
-  for (const language of ["python", "rust", "go", "bash", "text"]) {
+  for (const language of ["c", "cpp", "python", "rust", "go", "bash", "text"]) {
     assert.equal(canFormat(language), false);
     await assert.rejects(formatCode("unchanged", language), /not available/);
   }
